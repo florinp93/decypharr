@@ -1,0 +1,67 @@
+name: AllDebrid Fix Build
+
+on:
+  push:
+    branches:
+      - alldebrid-fix
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/decypharr
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libfuse-dev
+
+      - name: Run manager tests
+        run: go test ./pkg/manager/...
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            VERSION=2.7.1-alldebrid-fix
+            CHANNEL=beta
+          cache-from: type=gha,scope=alldebrid-fix
+          cache-to: type=gha,scope=alldebrid-fix,mode=max
+          push: true
+          tags: |
+            ${{ env.GHCR_IMAGE }}:alldebrid-fix
+            ${{ env.GHCR_IMAGE }}:alldebrid-fix-${{ github.sha }}

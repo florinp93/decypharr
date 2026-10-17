@@ -307,22 +307,36 @@ func (m *Manager) processQueuedTorrent(entry *storage.Entry) {
 		return
 	}
 
-	// Update entry progress
+	syncEntryFromDebridStatus(entry, debridTorrent)
+
+	_ = m.queue.Update(entry)
+	// Check if done or failed
+	if debridTorrent.Status == debridTypes.TorrentStatusDownloaded {
+		m.processAction(entry)
+	}
+}
+
+// syncEntryFromDebridStatus copies a polled provider status onto a queued entry.
+// Some providers (AllDebrid, Premiumize) only return the file list once the
+// torrent is downloaded, so an uncached entry is queued with no files and must
+// pick them up here; otherwise processAction runs with 0 files.
+func syncEntryFromDebridStatus(entry *storage.Entry, debridTorrent *debridTypes.Torrent) {
 	entry.Progress = debridTorrent.Progress / 100.0
 	entry.Speed = debridTorrent.Speed
 	entry.Size = debridTorrent.GetSize()
 	entry.Seeders = debridTorrent.Seeders
 	entry.UpdatedAt = time.Now()
 
+	if debridTorrent.Status == debridTypes.TorrentStatusDownloaded {
+		if debridTorrent.Debrid == "" {
+			debridTorrent.Debrid = entry.ActiveProvider
+		}
+		applyDebridTorrentToEntry(entry, debridTorrent)
+	}
+
 	// Update placement progress
 	if placement := entry.GetActiveProvider(); placement != nil {
 		placement.Progress = entry.Progress
-	}
-
-	_ = m.queue.Update(entry)
-	// Check if done or failed
-	if debridTorrent.Status == debridTypes.TorrentStatusDownloaded {
-		m.processAction(entry)
 	}
 }
 
