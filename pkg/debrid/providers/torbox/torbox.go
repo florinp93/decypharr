@@ -297,13 +297,14 @@ func (tb *Torbox) getTorboxStatus(status string, finished bool) types.TorrentSta
 	status = regexp.MustCompile(`\s*\(.*?\)\s*`).ReplaceAllString(status, "")
 
 	switch status {
-	case "paused", "downloading", "checkingResumeData", "metaDL", "pausedUP",
+	case "paused", "downloading", "checking", "checkingResumeData", "metaDL", "pausedUP",
 		"queuedUP", "checkingUP", "forcedUP", "allocating", "pausedDL",
 		"queuedDL", "checkingDL", "forcedDL", "moving", "incomplete":
 		return types.TorrentStatusDownloading
 	case "completed", "cached", "uploading", "seeding", "stalledUP", "downloaded":
 		return types.TorrentStatusDownloaded
 	default:
+		tb.logger.Warn().Str("download_state", status).Msg("Unknown TorBox download state, treating as error")
 		return types.TorrentStatusError
 	}
 }

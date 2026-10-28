@@ -323,3 +323,12 @@ func TestSeedingTorrentIsDownloadedWithLinks(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckingTorrentIsStillDownloading(t *testing.T) {
+	tb := testTorbox("")
+	for _, state := range []string{"metaDL", "checking", "checkingDL", "checkingResumeData", "downloading"} {
+		if got := tb.getTorboxStatus(state, false); got != types.TorrentStatusDownloading {
+			t.Fatalf("getTorboxStatus(%q) = %q, want downloading", state, got)
+		}
+	}
+}
