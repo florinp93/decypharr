@@ -260,3 +260,66 @@ func TestSubmitMagnetAcceptsObjectAndArrayResponses(t *testing.T) {
 		})
 	}
 }
+
+func TestSubmitMagnetRequestsSeedingWhenEnabled(t *testing.T) {
+	config.Reset()
+	config.SetConfigPath(t.TempDir())
+	t.Cleanup(config.Reset)
+
+	for name, seed := range map[string]bool{"enabled": true, "disabled": false} {
+		t.Run(name, func(t *testing.T) {
+			var got string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = r.ParseForm()
+				got = r.FormValue("seed")
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprint(w, `{"success":true,"data":{"torrent_id":17,"hash":"abc"}}`)
+			}))
+			t.Cleanup(server.Close)
+
+			tb := testTorbox(server.URL)
+			tb.config.SeedTorrents = seed
+			if _, err := tb.SubmitMagnet(&types.Torrent{
+				InfoHash: "abc",
+				Magnet:   &utils.Magnet{Link: "magnet:?xt=urn:btih:abc"},
+			}); err != nil {
+				t.Fatalf("SubmitMagnet() error = %v", err)
+			}
+			want := ""
+			if seed {
+				want = torboxSeed
+			}
+			if got != want {
+				t.Fatalf("seed form value = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestSeedingTorrentIsDownloadedWithLinks(t *testing.T) {
+	config.Reset()
+	config.SetConfigPath(t.TempDir())
+	t.Cleanup(config.Reset)
+
+	for _, state := range []string{"seeding", "uploading", "stalledUP", "cached"} {
+		t.Run(state, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprintf(w, `{"success":true,"data":{"id":17,"name":"Release","size":100,"progress":1,"download_state":%q,"download_finished":false,"hash":"abc","files":[{"id":3,"name":"Release/Release.mkv","absolute_path":"Release/Release.mkv","size":100}]}}`, state)
+			}))
+			t.Cleanup(server.Close)
+
+			torrent := &types.Torrent{Id: "17", DownloadUncached: true}
+			if err := testTorbox(server.URL).UpdateTorrent(torrent); err != nil {
+				t.Fatalf("UpdateTorrent() error = %v", err)
+			}
+			if torrent.Status != types.TorrentStatusDownloaded {
+				t.Fatalf("status = %q, want downloaded", torrent.Status)
+			}
+			file, ok := torrent.Files["Release.mkv"]
+			if !ok || file.Link != "torbox://17/3" {
+				t.Fatalf("file = %+v, want link torbox://17/3", file)
+			}
+		})
+	}
+}

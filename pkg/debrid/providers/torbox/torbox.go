@@ -256,6 +256,9 @@ func (tb *Torbox) SubmitMagnet(torrent *types.Torrent) (*types.Torrent, error) {
 	if !torrent.DownloadUncached {
 		formData["add_only_if_cached"] = "true"
 	}
+	if tb.config.SeedTorrents {
+		formData["seed"] = torboxSeed
+	}
 
 	resp, err := tb.doPostFormWithClient(tb.submissionClient(), "/api/torrents/createtorrent", formData, &data)
 	if err != nil {
@@ -283,6 +286,10 @@ func (tb *Torbox) SubmitMagnet(torrent *types.Torrent) (*types.Torrent, error) {
 	return torrent, nil
 }
 
+// torboxSeed is the createtorrent "seed" value that keeps a torrent seeding
+// (1 follows the account setting, 2 seeds, 3 does not seed).
+const torboxSeed = "2"
+
 func (tb *Torbox) getTorboxStatus(status string, finished bool) types.TorrentStatus {
 	if finished {
 		return types.TorrentStatusDownloaded
@@ -294,7 +301,7 @@ func (tb *Torbox) getTorboxStatus(status string, finished bool) types.TorrentSta
 		"queuedUP", "checkingUP", "forcedUP", "allocating", "pausedDL",
 		"queuedDL", "checkingDL", "forcedDL", "moving", "incomplete":
 		return types.TorrentStatusDownloading
-	case "completed", "cached", "uploading", "downloaded":
+	case "completed", "cached", "uploading", "seeding", "stalledUP", "downloaded":
 		return types.TorrentStatusDownloaded
 	default:
 		return types.TorrentStatusError
@@ -347,7 +354,7 @@ func (tb *Torbox) GetTorrent(torrentId string) (*types.Torrent, error) {
 			Path:      f.Name,
 		}
 
-		if data.DownloadFinished {
+		if t.Status == types.TorrentStatusDownloaded {
 			file.Link = fmt.Sprintf("torbox://%s/%d", t.Id, f.Id)
 		}
 
@@ -441,7 +448,7 @@ func (tb *Torbox) updateTorrentWithClient(client *request.Client, t *types.Torre
 			Path:      fileName,
 		}
 
-		if data.DownloadFinished {
+		if t.Status == types.TorrentStatusDownloaded {
 			file.Link = fmt.Sprintf("torbox://%s/%s", t.Id, strconv.Itoa(f.Id))
 		}
 
@@ -610,7 +617,7 @@ func (tb *Torbox) getTorrents(offset int) ([]*types.Torrent, error) {
 				Path:      f.Name,
 			}
 
-			if data.DownloadFinished {
+			if t.Status == types.TorrentStatusDownloaded {
 				file.Link = fmt.Sprintf("torbox://%s/%d", t.Id, f.Id)
 			}
 

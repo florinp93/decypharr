@@ -24,6 +24,7 @@ type Debrid struct {
 	Workers                      int      `json:"workers,omitempty"`
 	AutoExpireLinksAfter         string   `json:"auto_expire_links_after,omitempty"`
 	UserAgent                    string   `json:"user_agent,omitempty"`
+	SeedTorrents                 bool     `json:"seed_torrents,omitempty"` // TorBox only: keep torrents seeding after download
 
 	// Folder
 	Folder        string `json:"folder,omitempty"`          // Deprecated. Use Mount MountPath instead.

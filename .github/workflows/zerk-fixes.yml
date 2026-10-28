@@ -1,9 +1,9 @@
-name: AllDebrid Fix Build
+name: Zerk Fixes Build
 
 on:
   push:
     branches:
-      - alldebrid-fix
+      - zerk-fixes
   workflow_dispatch:
 
 permissions:
@@ -28,8 +28,8 @@ jobs:
       - name: Install build dependencies
         run: sudo apt-get update && sudo apt-get install -y libfuse-dev
 
-      - name: Run manager tests
-        run: go test ./pkg/manager/...
+      - name: Run tests
+        run: go test ./pkg/manager/... ./pkg/debrid/providers/torbox/... ./internal/config/...
 
   build:
     needs: test
@@ -57,11 +57,11 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           build-args: |
-            VERSION=2.7.1-alldebrid-fix
+            VERSION=2.7.1-zerk
             CHANNEL=beta
-          cache-from: type=gha,scope=alldebrid-fix
-          cache-to: type=gha,scope=alldebrid-fix,mode=max
+          cache-from: type=gha,scope=zerk-fixes
+          cache-to: type=gha,scope=zerk-fixes,mode=max
           push: true
           tags: |
-            ${{ env.GHCR_IMAGE }}:alldebrid-fix
-            ${{ env.GHCR_IMAGE }}:alldebrid-fix-${{ github.sha }}
+            ${{ env.GHCR_IMAGE }}:zerk-fixes
+            ${{ env.GHCR_IMAGE }}:zerk-fixes-${{ github.sha }}
