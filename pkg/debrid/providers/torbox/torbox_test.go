@@ -3,6 +3,7 @@ package torbox
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -330,5 +331,43 @@ func TestCheckingTorrentIsStillDownloading(t *testing.T) {
 		if got := tb.getTorboxStatus(state, false); got != types.TorrentStatusDownloading {
 			t.Fatalf("getTorboxStatus(%q) = %q, want downloading", state, got)
 		}
+	}
+}
+
+func TestSubmitMagnetUploadsTorrentFile(t *testing.T) {
+	config.Reset()
+	config.SetConfigPath(t.TempDir())
+	t.Cleanup(config.Reset)
+
+	var gotFile, gotMagnet, gotSeed string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("ParseMultipartForm() error = %v", err)
+		}
+		gotMagnet = r.FormValue("magnet")
+		gotSeed = r.FormValue("seed")
+		if f, _, err := r.FormFile("file"); err == nil {
+			b, _ := io.ReadAll(f)
+			gotFile = string(b)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"success":true,"data":{"torrent_id":17,"hash":"abc"}}`)
+	}))
+	t.Cleanup(server.Close)
+
+	tb := testTorbox(server.URL)
+	tb.config.SeedTorrents = true
+	torrent, err := tb.SubmitMagnet(&types.Torrent{
+		InfoHash: "abc",
+		Magnet:   &utils.Magnet{Link: "magnet:?xt=urn:btih:abc", File: []byte("d4:infoe")},
+	})
+	if err != nil {
+		t.Fatalf("SubmitMagnet() error = %v", err)
+	}
+	if torrent.Id != "17" {
+		t.Fatalf("SubmitMagnet() id = %q, want 17", torrent.Id)
+	}
+	if gotFile != "d4:infoe" || gotMagnet != "" || gotSeed != torboxSeed {
+		t.Fatalf("file = %q, magnet = %q, seed = %q", gotFile, gotMagnet, gotSeed)
 	}
 }

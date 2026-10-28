@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"path"
@@ -185,6 +186,35 @@ func (tb *Torbox) doPostFormWithClient(client *request.Client, endpoint string, 
 }
 
 // doPostJSON performs a POST request with a JSON body.
+// doPostFileWithClient posts formData plus a .torrent file as multipart/form-data.
+func (tb *Torbox) doPostFileWithClient(client *request.Client, endpoint string, formData map[string]string, fileData []byte, result any) (*http.Response, error) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for k, v := range formData {
+		if err := writer.WriteField(k, v); err != nil {
+			return nil, err
+		}
+	}
+	part, err := writer.CreateFormFile("file", "torrent.torrent")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := part.Write(fileData); err != nil {
+		return nil, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, tb.Host+endpoint, &body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	return client.DoJSON(req, result)
+}
+
 func (tb *Torbox) doPostJSON(endpoint string, payload any, result any) (*http.Response, error) {
 	var body io.Reader
 	if payload != nil {
@@ -250,8 +280,9 @@ func (tb *Torbox) IsAvailable(hashes []string) (map[string]bool, error) {
 func (tb *Torbox) SubmitMagnet(torrent *types.Torrent) (*types.Torrent, error) {
 	var data AddMagnetResponse
 
-	formData := map[string]string{
-		"magnet": torrent.Magnet.Link,
+	formData := map[string]string{}
+	if !torrent.Magnet.IsTorrent() {
+		formData["magnet"] = torrent.Magnet.Link
 	}
 	if !torrent.DownloadUncached {
 		formData["add_only_if_cached"] = "true"
@@ -260,7 +291,17 @@ func (tb *Torbox) SubmitMagnet(torrent *types.Torrent) (*types.Torrent, error) {
 		formData["seed"] = torboxSeed
 	}
 
-	resp, err := tb.doPostFormWithClient(tb.submissionClient(), "/api/torrents/createtorrent", formData, &data)
+	// Uploading the .torrent gives TorBox the metadata and private tracker
+	// announce up front instead of resolving a magnet through peers.
+	var (
+		resp *http.Response
+		err  error
+	)
+	if torrent.Magnet.IsTorrent() {
+		resp, err = tb.doPostFileWithClient(tb.submissionClient(), "/api/torrents/createtorrent", formData, torrent.Magnet.File, &data)
+	} else {
+		resp, err = tb.doPostFormWithClient(tb.submissionClient(), "/api/torrents/createtorrent", formData, &data)
+	}
 	if err != nil {
 		return nil, err
 	}
